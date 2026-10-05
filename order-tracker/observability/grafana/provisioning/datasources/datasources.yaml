@@ -1,0 +1,53 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
+
+  - name: Loki
+    uid: loki
+    type: loki
+    url: http://loki:3100
+    jsonData:
+      # Logs carry trace_id as structured metadata; link it to Tempo.
+      derivedFields:
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          url: "$${__value.raw}"
+          datasourceUid: tempo
+          urlDisplayLabel: View trace
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        tags:
+          - key: service.name
+            value: service_name
+        customQuery: true
+        query: '{$${__tags}} | trace_id="$${__trace.traceId}"'
+      tracesToMetrics:
+        datasourceUid: prometheus
+        tags:
+          - key: service.name
+            value: service_name
+        queries:
+          - name: Lookup requests
+            query: sum by (http_response_status_code) (rate(order_lookup_requests_total{$$__tags}[5m]))
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true

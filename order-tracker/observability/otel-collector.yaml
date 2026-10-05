@@ -1,0 +1,43 @@
+# The app sends all three signals here over OTLP; the Collector fans them out.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  # Prometheus ingests OTLP metrics natively (--web.enable-otlp-receiver).
+  otlp_http/prometheus:
+    metrics_endpoint: http://prometheus:9090/api/v1/otlp/v1/metrics
+  # Loki ingests OTLP logs natively; trace_id/span_id become structured metadata.
+  otlp_http/loki:
+    logs_endpoint: http://loki:3100/otlp/v1/logs
+  otlp_grpc/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/prometheus]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/loki]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_grpc/tempo]

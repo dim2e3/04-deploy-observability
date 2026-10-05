@@ -1,0 +1,59 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: order-tracker
+    folder: Order Tracker
+    interval: 30s
+    rules:
+      - uid: order-lookup-5xx
+        title: Order lookup 5xx errors
+        condition: C
+        data:
+          # 5xx responses per endpoint over the last 5 minutes.
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                sum by (http_route) (increase(order_lookup_requests_total{service_name="order-tracker",http_response_status_code=~"5.."}[5m]))
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        # No 5xx series yet (e.g. right after a restart) means no server errors.
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          service: order-tracker
+          severity: critical
+        annotations:
+          summary: "Order lookups are returning 5xx errors"
+          description: >-
+            {{ printf "%.0f" $values.B.Value }} 5xx response(s) on GET {{ $labels.http_route }}
+            in the last 5 minutes.
+          endpoint: "GET {{ $labels.http_route }}"
+          window: 5m
+          dashboard_url: http://localhost:3000/d/order-tracker/order-tracker?orgId=1&viewPanel=6
+          __dashboardUid__: order-tracker
+          __panelId__: "6"
